@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Disk Scheduling Simulator</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;600;800&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Exo 2', sans-serif;
+      background: #0d1a12;
+      color: #d8ffe0;
+      min-height: 100vh;
+      padding: 30px 20px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #00ff88;
+      text-shadow: 0 0 18px #00ff8899;
+      margin-bottom: 30px;
+    }
+
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+      background: #0a1a10;
+      border: 1px solid #1a4a28;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 0 40px #00ff8815;
+    }
+
+    .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+
+    label { font-size: 0.85rem; color: #66bb88; min-width: 130px; }
+
+    input[type=number] {
+      background: #0d1f13;
+      border: 1px solid #1e5a30;
+      color: #d8ffe0;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.95rem;
+      width: 120px;
+      outline: none;
+      transition: border 0.2s;
+    }
+    input[type=number]:focus { border-color: #00ff88; box-shadow: 0 0 8px #00ff8830; }
+
+    button {
+      background: linear-gradient(135deg, #00ff88, #00aa44);
+      border: none;
+      color: #0a1a10;
+      font-family: 'Exo 2', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      padding: 9px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    button:hover { opacity: 0.88; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    #diskInputs { margin: 14px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .disk-box {
+      display: inline-block;
+      padding: 5px 12px;
+      margin: 2px;
+      background: #0d2218;
+      border: 1.5px solid #00ff8855;
+      border-radius: 8px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.88rem;
+      color: #00ff88;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 0.2s, transform 0.2s, background 0.2s;
+    }
+    .disk-box.active {
+      opacity: 1;
+      transform: scale(1);
+      background: #0a3320;
+      box-shadow: 0 0 8px #00ff8840;
+    }
+
+    #diskResult {
+      margin-top: 16px;
+      font-size: 0.9rem;
+      line-height: 2;
+    }
+    #diskResult b { color: #00ff88; font-family: 'Share Tech Mono', monospace; }
+
+    canvas {
+      border: 1px solid #1a4a28;
+      border-radius: 10px;
+      margin-top: 18px;
+      display: block;
+      background: #0a1a10;
+      max-width: 100%;
+    }
+
+    .hint {
+      font-size: 0.78rem;
+      color: #2a5a38;
+      margin-top: 14px;
+      text-align: center;
+    }
+
+    .algo-divider {
+      border: none;
+      border-top: 1px solid #1a4a28;
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>💽 Disk Scheduling</h1>
+
+<div class="container">
+  <div class="row">
+    <label>No. of Requests</label>
+    <input type="number" id="dn" min="1" max="20" placeholder="e.g. 6">
+    <button onclick="createDisk()">Create</button>
+  </div>
+
+  <div id="diskInputs"></div>
+
+  <div class="row">
+    <label>Head Position</label>
+    <input type="number" id="head" placeholder="e.g. 53" min="0" max="199">
+  </div>
+
+  <button onclick="runDisk()">▶ Run All Algorithms</button>
+
+  <div id="diskResult"></div>
+  <canvas id="canvas" width="860" height="400"></canvas>
+
+  <p class="hint">Runs FCFS · SSTF · SCAN · C-SCAN · LOOK · C-LOOK and highlights the best seek time</p>
+</div>
+
+<script>
+function createDisk() {
+  let n   = parseInt(document.getElementById("dn").value) || 0;
+  let div = document.getElementById("diskInputs");
+  div.innerHTML = "";
+
+  for (let i = 0; i < n; i++) {
+    let inp = document.createElement("input");
+    inp.type = "number";
+    inp.id          = "dr" + i;
+    inp.placeholder = "Req " + (i + 1);
+    inp.min = 0; inp.max = 199;
+    inp.onkeydown = function(e) {
+      if (e.key === "Enter") {
+        let next = document.getElementById("dr" + (i + 1));
+        if (next) next.focus();
+        else document.getElementById("head").focus();
+      }
+    };
+    div.appendChild(inp);
+  }
+}
+
+function seekTime(seq) {
+  let t = 0;
+  for (let i = 1; i < seq.length; i++) t += Math.abs(seq[i] - seq[i - 1]);
+  return t;
+}
+
+function fcfs(h, r)  { return [h, ...r]; }
+
+function sstf(h, r) {
+  let t = [...r], seq = [h];
+  while (t.length) {
+    let idx = 0;
+    for (let i = 1; i < t.length; i++)
+      if (Math.abs(t[i] - h) < Math.abs(t[idx] - h)) idx = i;
+    h = t[idx]; seq.push(h); t.splice(idx, 1);
+  }
+  return seq;
+}
+
+function scan(h, r) {
+  let left  = r.filter(x => x < h).sort((a, b) => b - a);
+  let right = r.filter(x => x >= h).sort((a, b) => a - b);
+  return [h, ...right, ...left];
+}
+
+function cscan(h, r) {
+  let right = r.filter(x => x >= h).sort((a, b) => a - b);
+  let left  = r.filter(x => x < h).sort((a, b) => a - b);
+  return [h, ...right, ...left];
+}
+
+function look(h, r) {
+  let left  = r.filter(x => x < h).sort((a, b) => b - a);
+  let right = r.filter(x => x >= h).sort((a, b) => a - b);
+  return [h, ...right, ...left];
+}
+
+function clook(h, r) {
+  let right = r.filter(x => x >= h).sort((a, b) => a - b);
+  let left  = r.filter(x => x < h).sort((a, b) => a - b);
+  return [h, ...right, ...left];
+}
+
+function runDisk() {
+  let n    = parseInt(document.getElementById("dn").value) || 0;
+  let head = parseInt(document.getElementById("head").value);
+  if (isNaN(head)) { alert("Enter head position"); return; }
+
+  let req = [];
+  for (let i = 0; i < n; i++) {
+    let v = parseInt(document.getElementById("dr" + i).value);
+    if (!isNaN(v)) req.push(v);
+  }
+  if (!req.length) { alert("Enter disk requests"); return; }
+
+  let algos = [
+    ["FCFS",   fcfs(head, req)],
+    ["SSTF",   sstf(head, req)],
+    ["SCAN",   scan(head, req)],
+    ["C-SCAN", cscan(head, req)],
+    ["LOOK",   look(head, req)],
+    ["C-LOOK", clook(head, req)]
+  ];
+
+  document.getElementById("diskResult").innerHTML = "";
+
+  let i = 0;
+
+  function runNext() {
+    if (i >= algos.length) {
+      let ranked = algos.map(x => [x[0], seekTime(x[1])]).sort((a, b) => a[1] - b[1]);
+      document.getElementById("diskResult").innerHTML +=
+        "<hr class='algo-divider'><b style='color:#ffdd55;font-size:1rem'>🏆 Best: " +
+        ranked[0][0] + " — Seek Time: " + ranked[0][1] + "</b>";
+      return;
+    }
+
+    let name = algos[i][0];
+    let seq  = algos[i][1];
+    let st   = seekTime(seq);
+
+    document.getElementById("diskResult").innerHTML +=
+      "<br><b>" + name + "</b> → Seek Time: <b>" + st + "</b><br>";
+
+    animateDisk(seq, function() {
+      drawDiskGraph(seq, name, function() {
+        i++;
+        setTimeout(runNext, 1600);
+      });
+    });
+  }
+
+  runNext();
+}
+
+function animateDisk(seq, cb) {
+  let div       = document.getElementById("diskResult");
+  let container = document.createElement("div");
+  div.appendChild(container);
+  let i = 0;
+  function step() {
+    if (i < seq.length) {
+      let box = document.createElement("span");
+      box.className = "disk-box";
+      box.innerText = seq[i];
+      container.appendChild(box);
+      setTimeout(() => box.classList.add("active"), 50);
+      i++;
+      setTimeout(step, 230);
+    } else { cb(); }
+  }
+  step();
+}
+
+function drawDiskGraph(seq, name, done) {
+  let canvas  = document.getElementById("canvas");
+  let ctx     = canvas.getContext("2d");
+  let padLeft = 44, padRight = 20, padTop = 50, stepH = 38, maxDisk = 200;
+  let steps   = seq.length;
+  let drawW   = canvas.width - padLeft - padRight;
+
+  canvas.height = padTop + steps * stepH + 30;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let axisY = padTop - 10;
+
+  function mapX(val) { return padLeft + (val / maxDisk) * drawW; }
+  function rowY(idx) { return axisY + 20 + idx * stepH; }
+
+  // Number line
+  ctx.strokeStyle = "#2a5a38"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(padLeft, axisY); ctx.lineTo(padLeft + drawW, axisY); ctx.stroke();
+
+  ctx.font = "10px 'Share Tech Mono', monospace"; ctx.fillStyle = "#66bb88"; ctx.textAlign = "center";
+  for (let v = 0; v <= maxDisk; v += 20) {
+    let x = mapX(v);
+    ctx.beginPath(); ctx.strokeStyle = "#2a5a38"; ctx.lineWidth = 1;
+    ctx.moveTo(x, axisY - 5); ctx.lineTo(x, axisY + 5); ctx.stroke();
+    ctx.fillText(v, x, axisY - 9);
+  }
+
+  ctx.textAlign = "left"; ctx.fillStyle = "#00ff88";
+  ctx.font = "bold 12px 'Exo 2', sans-serif";
+  ctx.fillText(name, padLeft, axisY - 24);
+
+  // Guide lines
+  [...new Set(seq)].forEach(v => {
+    let x = mapX(v);
+    ctx.beginPath(); ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = "#1a4a28"; ctx.lineWidth = 0.8;
+    ctx.moveTo(x, axisY + 5); ctx.lineTo(x, rowY(steps - 1) + 8); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  function arrowhead(x1, y1, x2, y2, color) {
+    let angle = Math.atan2(y2 - y1, x2 - x1), len = 9;
+    ctx.save(); ctx.translate(x2, y2); ctx.rotate(angle);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-len, -4); ctx.lineTo(-len, 4);
+    ctx.closePath(); ctx.fillStyle = color; ctx.fill(); ctx.restore();
+  }
+
+  let step = 0;
+  function animStep() {
+    if (step >= steps - 1) {
+      ctx.beginPath(); ctx.arc(mapX(seq[steps-1]), rowY(steps-1), 4, 0, 2*Math.PI);
+      ctx.fillStyle = "#00ff88"; ctx.fill();
+      if (done) done(); return;
+    }
+    let x1 = mapX(seq[step]), y1 = rowY(step);
+    let x2 = mapX(seq[step+1]), y2 = rowY(step+1);
+
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 1.8; ctx.setLineDash([]); ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(x1, y1, 4, 0, 2*Math.PI);
+    ctx.fillStyle = step === 0 ? "#ff4455" : "#00cc66"; ctx.fill();
+
+    arrowhead(x1, y1, x2, y2, "#00ff88");
+    step++;
+    setTimeout(animStep, 400);
+  }
+  animStep();
+}
+</script>
+</body>
+</html>
